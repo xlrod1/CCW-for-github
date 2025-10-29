@@ -99,8 +99,8 @@ ggplot(cif_all, aes(x = time, y = CIF, color = group, linetype = group, fill = g
   theme_minimal()
 
 
-write.csv(cif_all ,"G:\\My Drive\\Phd4\\R code\\final_code\\SW\\final\\code\\alternative_methods\\cif_all_not_vaginal.csv",row.names=FALSE)
-ggsave("G:\\My Drive\\Phd4\\R code\\final_code\\SW\\final\\code\\alternative_methods\\cif_not_vaginal.jpeg", 
+write.csv(cif_all ,"cif_all_not_vaginal.csv",row.names=FALSE)
+ggsave("cif_not_vaginal.jpeg", 
        width = 10, height = 4.5,
        plot = last_plot(),
        units = "in")

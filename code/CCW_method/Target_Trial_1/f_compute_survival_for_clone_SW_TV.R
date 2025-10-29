@@ -14,7 +14,6 @@ library(zoo)
 #
 # Returns:
 # - A dataframe with estimated survival probabilities for different methods.
-#data<-boot_data
 
 compute_survival_for_clone_TV <- function(data,
                                           LB,
@@ -30,24 +29,10 @@ compute_survival_for_clone_TV <- function(data,
                                            ) {
  
   data$id.new<-seq(1:nrow(data))
-   #work only with complete cases:when i'll have the mesurment it will be differents
-  # if(is.null(only.measur.full.time)){
-  #   
-  #   
-  #   vars <- all.vars(glm_censor_formula)[!all.vars(glm_censor_formula)=="t"]
-  #   data<-data %>%
-  #     # select only the vars in the formula, then drop any rows with NA
-  #     filter(
-  #       if_all(all_of(vars), ~ !is.na(.))
-  #     )
-  #   
-  # }
-  #data=jj
   max.fup<-max(data$fup_outcome)
   event_times<-seq(0,max.fup,by=0.5)
   
   # 1) Expand to long via survSplit
-  #data=jj %>% filter(clone=="window_0_12")
   sd0 <- data %>% mutate(t_start = 0)
   
   long_evt   <- survSplit(sd0, cut = event_times, end = "fup_outcome",
@@ -59,8 +44,6 @@ compute_survival_for_clone_TV <- function(data,
   df_long <- long_evt %>% arrange(ID) %>% 
     mutate(t=t_start)
   
-  #f<-df_long %>% filter(id==1)
-  #jj<-data_long %>% filter(id==2)
   # 2) join your measurement‐times and fill any missing weights- by id not ID
   if(!is.null(only.measur.full.time)){
     #only.measur.full.time
@@ -90,33 +73,21 @@ compute_survival_for_clone_TV <- function(data,
       group_by(ID) %>%
       mutate(
         opening_clean_cf = na.locf(opening_clean_cf, na.rm = FALSE)
-        #,
-        #height_clean_cf = na.locf(height_clean_cf, na.rm = FALSE)
+
       )
-   # if I wnat to bulid a rolling weights of the itme depdendent variables 
-    # df_long_with_tv <- df_long_with_tv %>%
-    #   arrange(id, t_start) %>%
-    #   group_by(id) %>%
-    #   mutate(
-    #     opening_max_3h = slide_dbl(opening_clean_cf, ~max(.x, na.rm = TRUE),
-    #                                .before = 6 - 1, .complete = FALSE)  # 6*0.5 = 3 hours
-    #   )
-    
+   
     
     df_long<-df_long_with_tv %>% ungroup()
     
-   # f<-df_long %>% filter(id==1)
   }
   
-  #assign df_long in the Global envirment- this is for the Cox predict
- # assign("df_long", df_long, envir = .GlobalEnv)
-  
+ 
   # 3) fit the two censoring models. 
   # 1. Create a private environment that ONLY contains df_long
   
   local_env <- new.env(parent = baseenv())  # <-- not emptyenv(), allows base functions
   
-  local_env$Surv <- survival::Surv  # 🔴 This is the key fix
+  local_env$Surv <- survival::Surv  
   local_env$df_long <- df_long
   
   
@@ -144,9 +115,6 @@ compute_survival_for_clone_TV <- function(data,
   
   
   
-  # summary(fit_cox)
-  # summary(summary(fit_cox))
-  # Inject df_long into the environment the model will look in
   # 3. Inject the custom environment into BOTH the formula and terms objects
   environment(fit_cox$formula) <- local_env
   environment(fit_cox$terms) <- local_env
@@ -163,7 +131,6 @@ compute_survival_for_clone_TV <- function(data,
            expected0=expected0) %>% 
             distinct()
   
- # jj<-expected.data %>% filter(id==1)
   # 4) linear predictors & predictions
   if (first.w==TRUE){
     #if its the first window than the logistic regresion shoukd be estimated only on the the cebsoring point,
@@ -194,11 +161,7 @@ compute_survival_for_clone_TV <- function(data,
     fit_glm  <- glm(glm_censor_formula,
                     family = binomial(link = "logit"),
                     data   = data.at.f)
-    #glm_censor_forlmua_num<- update(glm_censor_formula, . ~ .-opening_clean_cf -height_clean_cf)
-    # fit_glm0  <- glm(glm_censor_forlmua_num,
-    #                 family = binomial(link = "logit"),
-    #                 data   = data.at.f)
-    #print(summary(fit_glm))
+   
     #predication data
     
     pred.data<-data.at.f %>% select(ID,t_start) %>% 
@@ -246,9 +209,6 @@ compute_survival_for_clone_TV <- function(data,
         censoring_weight_cox_SW   = truncate_weights(censoring_weight_cox_SW)
       )
     
-    # jj<-df_long %>% filter(!is.na(pred))
-    # jj2<-df_long %>% filter(X==4467)
-      #4467
   }else{
     
     # Define censoring times: early (t_start < LB) or late (t_start == UB), unless UB is Inf
@@ -475,41 +435,4 @@ compute_survival_for_clone_TV <- function(data,
   return(surv_dat)
 }
 
-# Function: plot_survival_curves
-# Description: Plots Kaplan-Meier survival curves for all clones and estimation methods.
-#
-# Parameters:
-# - survival_list: A list of survival dataframes (one per clone).
-#
-# Returns:
-# - A ggplot2 object with survival curves.
 
-plot_survival_curves <- function(survival_list) {
-  survival_combined <- bind_rows(survival_list, .id = "clone_id")
-  
-  ggplot(survival_combined, aes(x = time)) +
-   # geom_line(aes(y = manual, color = "Manual Weights")) +
-    geom_line(aes(y = log, color = "Log Model Weights")) +
-    geom_line(aes(y = cox, color = "Cox Model Weights")) +
-    geom_line(aes(y = not_w, color = "No Weights")) +
-    facet_wrap(~clone_id) +
-    labs(title = "Survival Curves for Different Clones", x = "Time", y = "Survival Probability") +
-    theme_minimal() +
-    scale_color_manual(values = c("Manual Weights" = "blue", "Log Model Weights" = "red", "Cox Model Weights" = "green", "No Weights" = "black"))
-}
-
-# Example usage:
-# survival_clone1 <- compute_survival_for_clone(clone_1_data)
-# survival_clone2 <- compute_survival_for_clone(clone_2_data)
-# survival_clone3 <- compute_survival_for_clone(clone_3_data)
-# survival_clone4 <- compute_survival_for_clone(clone_4_data)
-
-# survival_list <- list(clone_1 = survival_clone1, clone_2 = survival_clone2, clone_3 = survival_clone3, clone_4 = survival_clone4)
-# plot_survival_curves(survival_list)
-
-
-# jj.c<-df2 %>% select(id,NVD) %>% distinct() 
-# jj.c<-df2n.c %>% select(id,NVD,censor) 
-# jj<-df2%>% filter(id==20906)
-# 
-# table(jj.c$NVD)

@@ -12,47 +12,20 @@ library(slider)
 library(zoo)
 library(broom)
 library(tibble)
-df.only.base<- read.csv("G:/My Drive/Phd4/data/final_data/data_base_line.csv") 
-measur_df<-fread("G:/My Drive/Phd4/data/final_data/opening_height2.csv") 
-measur_df<-measur_df %>% select(-height_clean_cf) %>% ###take only the opening data
-  mutate(opening_clean_cf=ifelse(time.prom.measurement==0&is.na(opening_clean_cf),0,opening_clean_cf)
-  ) %>% 
-  filter(!is.na(opening_clean_cf))
+df.only.base<- read.csv("data_base_line.csv") 
 
-
-#jj<-measur_df %>% filter(id==2)
-
-
-#measur_df1<-measur_df %>% filter(bishop.higher.5==1)
-#round(colMeans(is.na(df.only.base)) * 100, 1)
-df.only.base<-df.only.base %>% right_join(.,measur_df %>% select(id) %>% distinct()) %>% 
-  mutate(GBS.pos=ifelse(is.na(GBS)|GBS==0,0,1))
-
-
-list.of.confounder<-age ~parity+GWG+smoking+GBS.pos
-
-
-
-vars <- all.vars(list.of.confounder)
-df.only.base<-df.only.base %>%
-  # select only the vars in the formula, then drop any rows with NA
-  filter(
-    if_all(all_of(vars), ~ !is.na(.))
-  )
-
-
-table(df.only.base$NVD)
 df<-df.only.base %>% 
   select(id,
          time.prom.to.delivery,
          time.prom.oxitocin.hour,
          NVD,
-         age ,parity,GWG,smoking,GBS.pos) %>% 
+         age ,parity,GWG,smoking,GBS.pos,preg.week,GBS) %>% 
   mutate(spontaneous_labor_time=ifelse(is.na(time.prom.oxitocin.hour),time.prom.to.delivery,NA),
-         cs=1-NVD)
+         cs=1-NVD,
+         nulliparity=ifelse(parity==0,1,0))
 
 brks <- c(0, 8, 16, 24, 32, 36)
-labels <- c("0–8", "8–16", "16–24", "24–32", "32-36")
+labels <- c("0–8", "8–16", "16–24", "24–32", "32–36")
 
 
 #Create Risk Sets by Interval
@@ -85,15 +58,13 @@ pseudodata <- bind_rows(pseudodata_list)
 
 
 #Step 1: Estimate Risk Difference / Relative Risk per Interval
-
-
 results_rr <- pseudodata %>%
   group_by(interval) %>%
   group_split() %>%
   lapply(function(subset_df) {
     if (length(unique(subset_df$treatment)) < 2) return(NULL)  # skip if no variation
-    
-    model <- glm(cs ~ treatment + age + parity + smoking + GBS.pos,
+    print(table(subset_df$treatment, subset_df$nulliparity))
+    model <- glm(cs ~ treatment + age + nulliparity+preg.week+smoking,
                  family = binomial(link = "log"), data = subset_df)
     
     broom::tidy(model, conf.int = TRUE) %>%
@@ -108,6 +79,9 @@ results_rr <- results_rr %>%
          RR_low = exp(conf.low),
          RR_high = exp(conf.high))
 
+
+interval_order <- c("0–8", "8–16", "16–24", "24–32", "32–36")
+results_rr$interval <- factor(results_rr$interval, levels = interval_order)
 ggplot(results_rr, aes(x = interval, y = RR)) +
   geom_point() +
   geom_errorbar(aes(ymin = RR_low, ymax = RR_high), width = 0.1) +
@@ -115,13 +89,14 @@ ggplot(results_rr, aes(x = interval, y = RR)) +
        y = "Risk Ratio (Induction vs Expectant) for assisted delivery"
     #   title = "Effect of Induction by Time Since PROM") +
   )+
-  theme_minimal()
+  theme_minimal(base_size = 14) +
+  theme(
+    axis.title = element_text(size = 16),
+    axis.text = element_text(size = 14),
+    plot.title = element_text(size = 16, face = "bold")
+  )
 
-write.csv(results_rr,"G:\\My Drive\\Phd4\\R code\\final_code\\SW\\final\\code\\alternative_methods\\RR_table.csv",row.names=FALSE)
-ggsave("G:\\My Drive\\Phd4\\R code\\final_code\\SW\\final\\code\\alternative_methods\\RR_plot.jpeg", 
-       width = 10, height = 4.5,
-       plot = last_plot(),
-       units = "in")
+write.csv(results_rr,"RR_table.csv",row.names=FALSE)
 
 library(quantreg)
 
@@ -131,7 +106,7 @@ results_time <- pseudodata %>%
   lapply(function(subset_df) {
     if (length(unique(subset_df$treatment)) < 2) return(NULL)
     
-    model <- rq(delivery_time ~ treatment + age + parity + smoking + GBS.pos,
+    model <- rq(delivery_time ~ treatment + age + nulliparity+preg.week+smoking,
                 tau = 0.5, data = subset_df)
     
     broom::tidy(model, conf.int = TRUE) %>%
@@ -150,6 +125,8 @@ results_time <- results_time %>%
     upper_ci = conf.high
   )
 
+interval_order <- c("0–8", "8–16", "16–24", "24–32", "32–36")
+results_time $interval <- factor(results_time $interval, levels = interval_order)
 
 
 ggplot(results_time, aes(x = interval, y = median_diff)) +
@@ -161,23 +138,16 @@ ggplot(results_time, aes(x = interval, y = median_diff)) +
     y = "Difference (Induction vs Expectant) in Median Time to Delivery (hours)"
   #  title = "Effect of Induction on Time to Delivery by Interval"
   ) +
-  theme_minimal()
+  theme_minimal(base_size = 14) +
+  theme(
+    axis.title = element_text(size = 16),
+    axis.text = element_text(size = 14),
+    plot.title = element_text(size = 16, face = "bold")
+  )
 
 
-write.csv(results_time,"G:\\My Drive\\Phd4\\R code\\final_code\\SW\\final\\code\\alternative_methods\\difference_time_table.csv",row.names=FALSE)
-ggsave("G:\\My Drive\\Phd4\\R code\\final_code\\SW\\final\\code\\alternative_methods\\diff_time_plot.jpeg", 
-       width = 10, height = 4.5,
-       plot = last_plot(),
-       units = "in")
 
-
-#install.packages("etm")
-#install.packages("mstate")
-# niw analysi as cnmeting risks:
-# Load necessary libraries
-
-#####################################3Cometing risks####################
-library(riskRegression)
+# #####################################Cometing risks####################
 
 #First plot if hazard ration of delivery in each induction group
 library(riskRegression)
@@ -191,7 +161,7 @@ hr_results <- list()
 # Loop over each interval
 for (interval_label in unique(pseudodata$interval)) {
   message("Processing interval: ", interval_label)
-  
+
   # Prepare data
   data_interval <- pseudodata %>%
     filter(interval == interval_label) %>%
@@ -203,66 +173,66 @@ for (interval_label in unique(pseudodata$interval)) {
         TRUE ~ 0      # censored
       )
     )
-  
+
   # Skip if not enough treatment variation
   if (length(unique(data_interval$treatment)) < 2) {
     message("  Skipped: only one treatment group.")
     next
   }
-  
+
   # Skip if no vaginal deliveries
   if (sum(data_interval$event_type == 1) == 0) {
     message("  Skipped: no vaginal deliveries.")
     next
   }
-  
+
   # Drop constant covariates
-  vars <- c("treatment", "age", "parity", "GBS.pos", "smoking")
+  vars <- c("treatment", "age", "nulliparity", "preg.week", "smoking")
   var_levels <- sapply(data_interval[, vars], function(x) length(unique(x)))
   covariates <- names(var_levels[var_levels > 1 & names(var_levels) != "treatment"])
-  
+
   # Build formula
   model_formula <- as.formula(paste(
     "Hist(delivery_time, event_type) ~ treatment",
     if (length(covariates) > 0) paste("+", paste(covariates, collapse = " +")) else ""
   ))
-  
+
   # Define model data
   model_vars <- c("delivery_time", "event_type", "treatment", covariates)
   data_model <- data_interval[, model_vars, drop = FALSE] %>% na.omit()
-  
+
   if (nrow(data_model) == 0) {
     message("  Skipped: no complete data after NA removal.")
     next
   }
-  
+
   # Fit model
   tryCatch({
     model <- CSC(model_formula, data = data_model)
-    
-    if (!"models" %in% names(model) || !"Cause 1" %in% names(model$models)) {
+
+    if (!"models" %in% names(model) || !"Cause 2" %in% names(model$models)) {
       message("  Skipped: cause-specific model for vaginal delivery not found.")
       next
     }
-    
-    model1 <- model$models$`Cause 1`
-    
+
+    model1 <- model$models$`Cause 2`
+
     if (!inherits(model1, "coxph")) {
       message("  Skipped: model1 is not a Cox model.")
       next
     }
-    
+
     coef_table <- summary(model1)$coefficients
-    
+
     if (!"treatment1" %in% rownames(coef_table)) {
       message("  Skipped: treatment1 not in coefficient table.")
       next
     }
-    
+
     hr_est <- coef_table["treatment1", "exp(coef)"]
     hr_lci <- exp(coef_table["treatment1", "coef"] - 1.96 * coef_table["treatment1", "se(coef)"])
     hr_uci <- exp(coef_table["treatment1", "coef"] + 1.96 * coef_table["treatment1", "se(coef)"])
-    
+
     hr_results[[interval_label]] <- data.frame(
       interval = interval_label,
       HR = hr_est,
@@ -277,7 +247,7 @@ for (interval_label in unique(pseudodata$interval)) {
 # Combine results
 hr_df <- bind_rows(hr_results)
 # Define desired order
-interval_order <- c("0–8", "8–16", "16–24", "24–32", "32-36")
+interval_order <- c("0–8", "8–16", "16–24", "24–32", "32–36")
 
 # Force interval to be an ordered factor
 hr_df$interval <- factor(hr_df$interval, levels = interval_order)
@@ -289,15 +259,20 @@ ggplot(hr_df, aes(x = interval, y = HR)) +
   labs(
   #  title = "Adjusted Hazard Ratio for Vaginal Delivery by Induction Interval",
     x = "Time interval from PROM (hours)",
-    y = "Hazard Ratio (Induced vs Expectant) for non-assited delivery"
-  ) +
-  theme_minimal()
+    y = "Hazard Ratio (Induced vs Expectant) for assited delivery"
+  )  +
+  theme_minimal(base_size = 14) +
+  theme(
+    axis.title = element_text(size = 16),
+    axis.text = element_text(size = 14),
+    plot.title = element_text(size = 16, face = "bold")
+  )
 
 
 
-write.csv(hr_df,"G:\\My Drive\\Phd4\\R code\\final_code\\SW\\final\\code\\alternative_methods\\hr_df_table_vaginal.csv",row.names=FALSE)
-ggsave("G:\\My Drive\\Phd4\\R code\\final_code\\SW\\final\\code\\alternative_methods\\hr_plot_vaginal.jpeg", 
-       width = 10, height = 4.5,
+write.csv(hr_df,"hr_df_table_non_vaginal.csv",row.names=FALSE)
+ggsave("hr_plot_non_vaginal.jpeg",
+       width = 10, height = 7,
        plot = last_plot(),
        units = "in")
 
