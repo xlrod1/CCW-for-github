@@ -4,29 +4,6 @@ This repository contains R code used in the **target trial emulation study** inv
 It accompanies the analyses presented in *Axelrod et al., “Trial Emulation to Compare Induction Timing Strategies After Prelabor Rupture of Membranes”* (manuscript in preparation).
 
 ---
-
-## 📂 Repository Structure
-code/
-└── CCW_method/
-├── Target_Trial_1/
-│ ├── balance_over_time/
-│ ├── boot_SW_CIF_TV.R
-│ ├── f_compute_survival_for_clone_TV.R
-│ └── main_code.R
-│
-├── Target_Trial_2/
-│ ├── boot_SW_CIF_TV.R
-│ ├── cloning_functions.R
-│ ├── f_compute_survival_for_clone_TV.R
-│ └── main_code.R
-│
-└── Non_causal_analysis/
-├── melamed.R
-├── melamed_CIF.R
-└── melamed_CIF_diff.R
-
----
-
 ## 🔍 Main Components
 
 ### Target_Trial_1/
